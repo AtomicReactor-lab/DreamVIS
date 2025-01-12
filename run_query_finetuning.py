@@ -159,6 +159,23 @@ def interpolate_pos_embed(model, checkpoint_model):
         
         checkpoint_model['pos_embed'] = pos_embed_checkpoint
 
+def print_model_structure(model):
+    print("\nDetailed Model Structure:")
+    print("=" * 50)
+    print(f"Model Type: {type(model).__name__}")
+    
+    total_params = 0
+    for name, param in model.named_parameters():
+        param_count = param.numel()
+        total_params += param_count
+        print(f"\nLayer: {name}")
+        print(f"Shape: {list(param.shape)}")
+        print(f"Parameters: {param_count:,}")
+    
+    print("\n" + "=" * 50)
+    print(f"Total Parameters: {total_params:,}")
+    print("=" * 50)
+
 def main(args):
     utils.init_distributed_mode(args)
     print(args)
@@ -222,6 +239,7 @@ def main(args):
             window_size=args.window_size,
             in_chans=args.in_chans
         )
+        print_model_structure(model)
     else:
         raise ValueError(f"Unknown model: {args.model}")
 
