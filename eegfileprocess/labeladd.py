@@ -1,7 +1,6 @@
 import numpy as np
 import h5py
 import json
-import re
 from pathlib import Path
 from bs4 import BeautifulSoup
 
@@ -22,38 +21,26 @@ def load_vis_ranges(ranges_file):
                 ranges[current_file]['end'] = end
     return ranges
 
-def extract_vis_query(html_content):
-    """从HTML内容中提取VIS查询语句"""
-    match = re.search(r'Visualize\s+(.*?)(?:\s*$|\s*<)', html_content)
-    if match:
-        return match.group(1).strip()
-    return None
+def extract_vql_from_html(html_file):
+    """从HTML文件中提取最后一个VQL注释"""
+    vql = None
+    with open(html_file, 'r', encoding='utf-8') as f:
+        for line in f:
+            if '<!-- <h4>VIS Query: </h4><p>' in line:
+                vql = line.strip()
+    return vql
 
-def extract_table_content(html_content):
-    """提取并格式化表格内容"""
-    soup = BeautifulSoup(html_content, 'html.parser')
-    table = soup.find('table')
-    if not table:
-        return None
-    
-    # 提取表头
-    headers = []
-    for th in table.find_all('th'):
-        headers.append(th.text.strip())
-    
-    # 提取表格内容
-    rows = []
-    for tr in table.find_all('tr')[1:]:  # 跳过表头行
-        row = []
-        for td in tr.find_all('td'):
-            row.append(td.text.strip())
-        rows.append(row)
-    
-    # 格式化表格内容
-    formatted_table = "||".join(headers) + "\n"  # 使用||作为列分隔符
-    formatted_table += "\n".join(["||".join(row) for row in rows])
-    
-    return formatted_table
+def extract_table_from_html(html_file):
+    """从container div中提取完整的表格HTML内容"""
+    with open(html_file, 'r', encoding='utf-8') as f:
+        content = f.read()
+        soup = BeautifulSoup(content, 'html.parser')
+        container = soup.find('div', {'class': 'container'})
+        if container:
+            table = container.find('table')
+            if table:
+                return str(table)
+    return None
 
 def process_test_with_labels(test_file, vis_ranges):
     """处理单个test文件并添加标签"""
@@ -90,15 +77,17 @@ def process_test_with_labels(test_file, vis_ranges):
             trial_data = trials[trial_idx]
             
             # 读取table内容
-            with open(table_path, 'r', encoding='utf-8') as f:
-                table_content = extract_table_content(f.read())
+            table_content = extract_table_from_html(table_path)
             
-            # 读取query内容
+            # 读取query内容和自然语言查询
             with open(query_path, 'r', encoding='utf-8') as f:
-                query_content = f.read()
-                vis_query = extract_vis_query(query_content)
-                query_soup = BeautifulSoup(query_content, 'html.parser')
-                nl_query = query_soup.find('div', class_='container').text.strip()
+                content = f.read()
+                soup = BeautifulSoup(content, 'html.parser')
+                container = soup.find('div', {'class': 'container'})
+                nl_query = container.text.strip() if container else None
+            
+            # 提取VQL
+            vql = extract_vql_from_html(query_path)
             
             # 创建带标签的试次数据
             labeled_trial = {
@@ -107,7 +96,7 @@ def process_test_with_labels(test_file, vis_ranges):
                     'vis_id': vis_id,
                     'table': table_content,
                     'nl_query': nl_query,
-                    'vis_query': vis_query
+                    'vis_query': vql
                 }
             }
             labeled_trials.append(labeled_trial)
@@ -123,18 +112,15 @@ def process_test_with_labels(test_file, vis_ranges):
              })
     
     print(f"完成 {test_file}: 处理了 {len(labeled_trials)} 个试次 (VIS范围: {start_vis}-{end_vis})")
-    
     return labeled_trials
 
 def batch_process_all_tests():
     """批量处理所有test文件"""
-    # 1. 加载VIS范围信息
     ranges_file = Path("/home/shiyao/EEG/eegprocessed/vis_ranges_20250106_065622.txt")
     vis_ranges = load_vis_ranges(ranges_file)
     
     print("开始处理所有文件...")
     
-    # 2. 处理每个test文件
     for test_file in sorted(vis_ranges.keys()):
         try:
             process_test_with_labels(test_file, vis_ranges)
